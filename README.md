@@ -1,5 +1,7 @@
 # pi-superpowers
 
+![pi-superpowers banner](banner.jpg)
+
 Structured workflow skills for [pi](https://github.com/badlogic/pi-mono), adapted from [Superpowers](https://github.com/obra/superpowers) by Jesse Vincent.
 
 Brainstorming → Planning → TDD → Debugging → Code Review → Finishing — as composable skills your coding agent loads on demand.

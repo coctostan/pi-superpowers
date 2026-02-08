@@ -10,6 +10,23 @@
 
 ---
 
+### Prerequisite: Clone Upstream Repository
+
+Tasks 2–13 copy files from the upstream superpowers repo. Clone it once before starting:
+
+```bash
+mkdir -p /tmp/pi-github-repos/obra
+git clone https://github.com/obra/superpowers.git /tmp/pi-github-repos/obra/superpowers
+```
+
+If it's already cloned, pull latest:
+
+```bash
+cd /tmp/pi-github-repos/obra/superpowers && git pull
+```
+
+---
+
 ### Task 1: Project Scaffolding
 
 Create the package structure: `package.json`, updated `LICENSE`, and directory stubs.
@@ -81,6 +98,7 @@ SOFTWARE.
 
 ```bash
 mkdir -p extensions skills
+touch extensions/.gitkeep skills/.gitkeep
 ```
 
 **Step 4: Commit**
@@ -92,9 +110,9 @@ git commit -m "chore: project scaffolding with package.json and dual-copyright L
 
 ---
 
-### Task 2: Copy Reference Files (Unchanged)
+### Task 2: Copy Reference Files (with Minimal Transforms)
 
-Copy supporting reference files that are used as-is from upstream. These are documentation/scripts referenced by skills but don't contain Claude-specific content.
+Copy supporting reference files from upstream. These are documentation/scripts/prompt-templates referenced by skills. Most are copied as-is; prompt templates get minimal pi wording transforms.
 
 **Files:**
 - Create: `skills/systematic-debugging/condition-based-waiting.md`
@@ -639,6 +657,8 @@ Create the plan-tracker extension: one tool with four actions (`init`, `update`,
 
 **Step 1: Write the extension**
 
+> **Design doc divergence (intentional):** The design doc mentions `pi.appendEntry("plan_tracker", ...)` for state storage. This plan uses `toolResult.details` instead — state is stored in tool result details and reconstructed by walking the branch. This is the preferred approach per pi's extension docs ("State Management" section) because it handles session branching correctly (each branch sees only its own tool results). The API role literal is confirmed as `"toolResult"` (camelCase) from `@mariozechner/pi-ai` types.
+
 ```typescript
 /**
  * Plan Tracker Extension
@@ -676,7 +696,8 @@ const PlanTrackerParams = Type.Object({
     })
   ),
   index: Type.Optional(
-    Type.Number({
+    Type.Integer({
+      minimum: 0,
       description: "Task index, 0-based (for update)",
     })
   ),
@@ -820,6 +841,16 @@ export default function (pi: ExtensionAPI) {
               } as PlanTrackerDetails,
             };
           }
+          if (tasks.length === 0) {
+            return {
+              content: [{ type: "text", text: "Error: no plan active. Use init first." }],
+              details: {
+                action: "update",
+                tasks: [],
+                error: "no plan active",
+              } as PlanTrackerDetails,
+            };
+          }
           if (params.index < 0 || params.index >= tasks.length) {
             return {
               content: [
@@ -832,16 +863,6 @@ export default function (pi: ExtensionAPI) {
                 action: "update",
                 tasks: [...tasks],
                 error: `index ${params.index} out of range`,
-              } as PlanTrackerDetails,
-            };
-          }
-          if (tasks.length === 0) {
-            return {
-              content: [{ type: "text", text: "Error: no plan active. Use init first." }],
-              details: {
-                action: "update",
-                tasks: [],
-                error: "no plan active",
               } as PlanTrackerDetails,
             };
           }
