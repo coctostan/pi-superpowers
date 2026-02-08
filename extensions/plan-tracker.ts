@@ -1,7 +1,7 @@
 /**
  * Plan Tracker Extension
  *
- * Replaces TodoWrite with a native pi tool for tracking plan progress.
+ * A native pi tool for tracking plan progress.
  * State is stored in tool result details for proper branching support.
  * Shows a persistent TUI widget above the editor.
  */
