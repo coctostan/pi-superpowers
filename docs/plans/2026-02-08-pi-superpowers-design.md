@@ -105,6 +105,7 @@ pi-superpowers/
     "skills": ["skills"]
   },
   "peerDependencies": {
+    "@mariozechner/pi-ai": "*",
     "@mariozechner/pi-coding-agent": "*",
     "@mariozechner/pi-tui": "*",
     "@sinclair/typebox": "*"
@@ -123,7 +124,7 @@ Every skill gets these search-and-replace transformations:
 | Find | Replace | Rationale |
 |------|---------|-----------|
 | `superpowers:skill-name` | `skill-name` | No namespace prefix in pi |
-| `Skill` tool / `Invoke Skill tool` | `read` tool / load skill with `read` | Pi's native mechanism |
+| `Skill` tool / `Invoke Skill tool` | `/skill:name` or `read` tool | Pi's native mechanisms |
 | `TodoWrite` / `Create TodoWrite` | `plan_tracker` tool | Extension provides this |
 | `CLAUDE.md` | Project config (`.pi/settings.json`, `README.md`) | Pi equivalent |
 | `Task tool` / `Task tool (general-purpose)` | "dispatch a subagent" (generic) | No assumption about team tool |
@@ -134,9 +135,10 @@ Every skill gets these search-and-replace transformations:
 Instead of `using-superpowers` injecting "always check skills" into every session, each skill gets a **Related Skills** blockquote after the frontmatter:
 
 ```markdown
-> **Related skills:** Check if [brainstorming](../brainstorming/SKILL.md)
-> applies before starting implementation.
+> **Related skills:** Consider `/skill:brainstorming` before starting implementation.
 ```
+
+Cross-references use `/skill:name` syntax (not relative file paths) so they work regardless of install location.
 
 This costs ~50 bytes per skill instead of 3.8KB injected every turn. It appears only when the model has already loaded a skill, so it's contextually relevant.
 
@@ -146,13 +148,13 @@ Specific cross-references per skill:
 |-------|---------------------|
 | brainstorming | → using-git-worktrees, writing-plans |
 | writing-plans | → brainstorming (designed first?), executing-plans / subagent-driven-development (ready to implement?) |
-| executing-plans | → using-git-worktrees (isolated workspace?), finishing-a-development-branch (done?) |
+| executing-plans | → using-git-worktrees (isolated workspace?), verification-before-completion (verify each task), finishing-a-development-branch (done?) |
 | subagent-driven-development | → using-git-worktrees, writing-plans, finishing-a-development-branch |
 | test-driven-development | → verification-before-completion (run tests before claiming done) |
 | systematic-debugging | → test-driven-development (write failing test for bug), verification-before-completion (actually fixed?) |
 | verification-before-completion | → (none — this is a leaf skill) |
 | dispatching-parallel-agents | → (none — standalone pattern) |
-| requesting-code-review | → (none — triggered by other skills) |
+| requesting-code-review | → verification-before-completion (run tests before requesting review) |
 | receiving-code-review | → (none — triggered by review feedback) |
 | finishing-a-development-branch | → verification-before-completion (tests pass?), requesting-code-review |
 | using-git-worktrees | → (none — infrastructure skill) |
@@ -165,6 +167,15 @@ Skills referencing subagent dispatch (`subagent-driven-development`, `requesting
 - Replace `Task tool` references with: "dispatch a subagent with the following prompt"
 - The model can use whatever dispatch mechanism is available, or the user can run it manually
 - If pi-superteam is installed, the model will naturally use the `team` tool
+
+Each skill that references subagent dispatch includes a **Dispatch options** recipe block:
+
+```markdown
+**How to dispatch:**
+- If a dispatch tool is available (e.g. pi-superteam's `team` tool), use it
+- Otherwise, run a second pi instance: `pi -p "prompt from template"`
+- For parallel tasks, use multiple terminal panes (one per task)
+```
 
 The skills degrade gracefully: structured workflow with or without automation.
 
@@ -194,6 +205,7 @@ One tool, three actions:
 plan_tracker({ action: "init", tasks: ["Task 1: Hook installation", "Task 2: Recovery modes", ...] })
 plan_tracker({ action: "update", index: 0, status: "complete" })
 plan_tracker({ action: "status" })
+plan_tracker({ action: "clear" })
 ```
 
 **`init`** — Set task list from a plan. Clears any previous state. Returns confirmation with task count.
@@ -202,10 +214,12 @@ plan_tracker({ action: "status" })
 
 **`status`** — Return current task list with statuses. Useful for the model to check progress without file I/O.
 
+**`clear`** — Remove all state and dismiss the widget. Use when a plan is abandoned or complete.
+
 ### State management
 
 - Stored via `pi.appendEntry("plan_tracker", { tasks, updated })` — persists in session, survives restarts, works with branching/forking
-- Restored on `session_start` by walking `ctx.sessionManager.getBranch()` for the latest `plan_tracker` entry
+- Restored on `session_start`, `session_switch`, `session_fork`, and `session_tree` by walking `ctx.sessionManager.getBranch()` for the latest `plan_tracker` entry
 - No file I/O, no tracking file to manage
 
 ### TUI widget
