@@ -4,25 +4,24 @@
  * A native pi tool for tracking plan progress.
  * State is stored in tool result details for proper branching support.
  * Shows a persistent TUI widget above the editor.
+ *
+ * Pure logic lives in plan-tracker-core.ts for testability.
  */
 
 import { StringEnum } from "@mariozechner/pi-ai";
 import type { ExtensionAPI, ExtensionContext, Theme } from "@mariozechner/pi-coding-agent";
 import { Text } from "@mariozechner/pi-tui";
 import { Type, type Static } from "@sinclair/typebox";
-
-type TaskStatus = "pending" | "in_progress" | "complete";
-
-interface Task {
-  name: string;
-  status: TaskStatus;
-}
-
-interface PlanTrackerDetails {
-  action: "init" | "update" | "status" | "clear";
-  tasks: Task[];
-  error?: string;
-}
+import {
+  type Task,
+  type PlanTrackerDetails,
+  handleInit,
+  handleUpdate,
+  handleStatus,
+  handleClear,
+  formatWidgetData,
+  reconstructFromBranch,
+} from "./plan-tracker-core.js";
 
 const PlanTrackerParams = Type.Object({
   action: StringEnum(["init", "update", "status", "clear"] as const, {
@@ -48,16 +47,16 @@ const PlanTrackerParams = Type.Object({
 
 export type PlanTrackerInput = Static<typeof PlanTrackerParams>;
 
-function formatWidget(tasks: Task[], theme: Theme): string {
-  if (tasks.length === 0) return "";
+function renderWidgetText(tasks: Task[], theme: Theme): string {
+  const data = formatWidgetData(tasks);
+  if (data.total === 0) return "";
 
-  const complete = tasks.filter((t) => t.status === "complete").length;
-  const icons = tasks
-    .map((t) => {
-      switch (t.status) {
-        case "complete":
+  const icons = data.icons
+    .map((icon) => {
+      switch (icon) {
+        case "✓":
           return theme.fg("success", "✓");
-        case "in_progress":
+        case "→":
           return theme.fg("warning", "→");
         default:
           return theme.fg("dim", "○");
@@ -65,48 +64,15 @@ function formatWidget(tasks: Task[], theme: Theme): string {
     })
     .join("");
 
-  // Find current task (first in_progress, or first pending)
-  const current =
-    tasks.find((t) => t.status === "in_progress") ??
-    tasks.find((t) => t.status === "pending");
-  const currentName = current ? `  ${current.name}` : "";
-
-  return `${theme.fg("muted", "Tasks:")} ${icons} ${theme.fg("muted", `(${complete}/${tasks.length})`)}${currentName}`;
-}
-
-function formatStatus(tasks: Task[]): string {
-  if (tasks.length === 0) return "No plan active.";
-
-  const complete = tasks.filter((t) => t.status === "complete").length;
-  const inProgress = tasks.filter((t) => t.status === "in_progress").length;
-  const pending = tasks.filter((t) => t.status === "pending").length;
-
-  const lines: string[] = [];
-  lines.push(`Plan: ${complete}/${tasks.length} complete (${inProgress} in progress, ${pending} pending)`);
-  lines.push("");
-  for (let i = 0; i < tasks.length; i++) {
-    const t = tasks[i];
-    const icon =
-      t.status === "complete" ? "✓" : t.status === "in_progress" ? "→" : "○";
-    lines.push(`  ${icon} [${i}] ${t.name}`);
-  }
-  return lines.join("\n");
+  const currentName = data.currentName ? `  ${data.currentName}` : "";
+  return `${theme.fg("muted", "Tasks:")} ${icons} ${theme.fg("muted", `(${data.complete}/${data.total})`)}${currentName}`;
 }
 
 export default function (pi: ExtensionAPI) {
   let tasks: Task[] = [];
 
   const reconstructState = (ctx: ExtensionContext) => {
-    tasks = [];
-    for (const entry of ctx.sessionManager.getBranch()) {
-      if (entry.type !== "message") continue;
-      const msg = entry.message;
-      if (msg.role !== "toolResult" || msg.toolName !== "plan_tracker") continue;
-      const details = msg.details as PlanTrackerDetails | undefined;
-      if (details && !details.error) {
-        tasks = details.tasks;
-      }
-    }
+    tasks = reconstructFromBranch(ctx.sessionManager.getBranch() as any);
   };
 
   const updateWidget = (ctx: ExtensionContext) => {
@@ -115,7 +81,7 @@ export default function (pi: ExtensionAPI) {
       ctx.ui.setWidget("plan_tracker", undefined);
     } else {
       ctx.ui.setWidget("plan_tracker", (_tui, theme) => {
-        return new Text(formatWidget(tasks, theme), 0, 0);
+        return new Text(renderWidgetText(tasks, theme), 0, 0);
       });
     }
   };
@@ -141,114 +107,52 @@ export default function (pi: ExtensionAPI) {
     parameters: PlanTrackerParams,
 
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      let result;
+
       switch (params.action) {
         case "init": {
-          if (!params.tasks || params.tasks.length === 0) {
-            return {
-              content: [{ type: "text", text: "Error: tasks array required for init" }],
-              details: {
-                action: "init",
-                tasks: [...tasks],
-                error: "tasks required",
-              } as PlanTrackerDetails,
-            };
-          }
-          tasks = params.tasks.map((name) => ({ name, status: "pending" as TaskStatus }));
+          result = handleInit(params.tasks);
+          tasks = result.tasks;
           updateWidget(ctx);
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Plan initialized with ${tasks.length} tasks.\n${formatStatus(tasks)}`,
-              },
-            ],
-            details: { action: "init", tasks: [...tasks] } as PlanTrackerDetails,
-          };
+          break;
         }
-
         case "update": {
-          if (params.index === undefined || !params.status) {
-            return {
-              content: [
-                { type: "text", text: "Error: index and status required for update" },
-              ],
-              details: {
-                action: "update",
-                tasks: [...tasks],
-                error: "index and status required",
-              } as PlanTrackerDetails,
-            };
-          }
-          if (tasks.length === 0) {
-            return {
-              content: [{ type: "text", text: "Error: no plan active. Use init first." }],
-              details: {
-                action: "update",
-                tasks: [],
-                error: "no plan active",
-              } as PlanTrackerDetails,
-            };
-          }
-          if (params.index < 0 || params.index >= tasks.length) {
-            return {
-              content: [
-                {
-                  type: "text",
-                  text: `Error: index ${params.index} out of range (0-${tasks.length - 1})`,
-                },
-              ],
-              details: {
-                action: "update",
-                tasks: [...tasks],
-                error: `index ${params.index} out of range`,
-              } as PlanTrackerDetails,
-            };
-          }
-          tasks[params.index].status = params.status;
+          result = handleUpdate(tasks, params.index, params.status);
+          tasks = result.tasks;
           updateWidget(ctx);
-          return {
-            content: [
-              {
-                type: "text",
-                text: `Task ${params.index} "${tasks[params.index].name}" → ${params.status}\n${formatStatus(tasks)}`,
-              },
-            ],
-            details: { action: "update", tasks: [...tasks] } as PlanTrackerDetails,
-          };
+          break;
         }
-
         case "status": {
-          return {
-            content: [{ type: "text", text: formatStatus(tasks) }],
-            details: { action: "status", tasks: [...tasks] } as PlanTrackerDetails,
-          };
+          result = handleStatus(tasks);
+          break;
         }
-
         case "clear": {
-          const count = tasks.length;
-          tasks = [];
+          result = handleClear(tasks);
+          tasks = result.tasks;
           updateWidget(ctx);
-          return {
-            content: [
-              {
-                type: "text",
-                text: count > 0 ? `Plan cleared (${count} tasks removed).` : "No plan was active.",
-              },
-            ],
-            details: { action: "clear", tasks: [] } as PlanTrackerDetails,
-          };
+          break;
         }
-
         default:
           return {
             content: [{ type: "text", text: `Unknown action: ${params.action}` }],
             details: {
               action: "status",
               tasks: [...tasks],
-              error: `unknown action`,
+              error: "unknown action",
             } as PlanTrackerDetails,
           };
       }
+
+      const details: PlanTrackerDetails = {
+        action: params.action,
+        tasks: result.tasks,
+        ...(result.error ? { error: result.error } : {}),
+      };
+
+      return {
+        content: [{ type: "text", text: result.text }],
+        details,
+      };
     },
 
     renderCall(args, theme) {
