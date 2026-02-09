@@ -94,13 +94,14 @@ describe("skill frontmatter validation", () => {
     }
   });
 
-  test("name is lowercase, a-z, 0-9, hyphens only", () => {
+  test("name is lowercase a-z, 0-9, hyphens only, no leading/trailing hyphens", () => {
     for (const dir of skillDirs) {
       const fm = parseFrontmatter(skillContents.get(dir)!);
+      // Allows single char (e.g. "a") or multi-char with no leading/trailing hyphens
       expect(
         fm!.name,
         `${dir} name should match pattern`
-      ).toMatch(/^[a-z0-9][a-z0-9-]*[a-z0-9]$/);
+      ).toMatch(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/);
     }
   });
 

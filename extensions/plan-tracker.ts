@@ -14,6 +14,7 @@ import { Text } from "@mariozechner/pi-tui";
 import { Type, type Static } from "@sinclair/typebox";
 import {
   type Task,
+  type BranchEntry,
   type PlanTrackerDetails,
   handleInit,
   handleUpdate,
@@ -72,7 +73,7 @@ export default function (pi: ExtensionAPI) {
   let tasks: Task[] = [];
 
   const reconstructState = (ctx: ExtensionContext) => {
-    tasks = reconstructFromBranch(ctx.sessionManager.getBranch() as any);
+    tasks = reconstructFromBranch(ctx.sessionManager.getBranch() as BranchEntry[]);
   };
 
   const updateWidget = (ctx: ExtensionContext) => {
@@ -112,8 +113,13 @@ export default function (pi: ExtensionAPI) {
       switch (params.action) {
         case "init": {
           result = handleInit(params.tasks);
-          tasks = result.tasks;
-          updateWidget(ctx);
+          if (!result.error) {
+            tasks = result.tasks;
+            updateWidget(ctx);
+          } else {
+            // Preserve existing tasks in details on error (don't destroy active plan)
+            result = { ...result, tasks: [...tasks] };
+          }
           break;
         }
         case "update": {
