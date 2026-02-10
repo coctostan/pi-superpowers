@@ -74,6 +74,41 @@ Skills that reference subagent dispatch (subagent-driven-development, requesting
 - **With pi-superteam:** The agent uses the `team` tool automatically
 - **Without pi-superteam:** Run `pi -p "prompt"` in another terminal, or use tmux panes for parallel tasks
 
+## Development
+
+### Testing
+
+Tests use [vitest](https://vitest.dev/) and live in `tests/`:
+
+```
+tests/
+├── extension/
+│   └── plan-tracker.test.ts   # Unit tests for plan-tracker core logic
+└── skills/
+    └── skill-validation.test.ts  # Validates all skills: frontmatter, cross-refs, file refs
+```
+
+Run the full suite:
+
+```bash
+npm test
+```
+
+Run in watch mode during development:
+
+```bash
+npm run test:watch
+```
+
+**Skill validation tests** check that every skill in `skills/` has:
+- A valid `SKILL.md` with YAML frontmatter (`name`, `description`)
+- Name matching directory name, lowercase with hyphens, ≤ 64 chars
+- All `/skill:name` cross-references pointing to existing skills
+- All referenced `.md`, `.sh`, `.ts` files existing on disk
+- Correct wiring in `package.json` (`pi.skills`, `pi.extensions`)
+
+**Extension tests** cover the plan-tracker core: init, update, status, clear, formatting, widget data, and state reconstruction from conversation branches.
+
 ## Attribution
 
 Skill content adapted from [Superpowers](https://github.com/obra/superpowers) by Jesse Vincent, licensed under MIT.
