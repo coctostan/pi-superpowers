@@ -1,22 +1,42 @@
 {
   "name": "pi-superpowers",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Superpowers workflow skills adapted for pi",
-  "keywords": ["pi-package"],
+  "keywords": [
+    "pi-package"
+  ],
   "license": "MIT",
   "author": "coctostan",
   "repository": {
     "type": "git",
     "url": "https://github.com/coctostan/pi-superpowers.git"
   },
+  "files": [
+    "extensions/",
+    "skills/",
+    "banner.jpg",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
   "pi": {
-    "extensions": ["extensions/plan-tracker.ts"],
-    "skills": ["skills"]
+    "extensions": [
+      "extensions/plan-tracker.ts"
+    ],
+    "skills": [
+      "skills"
+    ]
   },
   "peerDependencies": {
     "@mariozechner/pi-ai": "*",
     "@mariozechner/pi-coding-agent": "*",
     "@mariozechner/pi-tui": "*",
     "@sinclair/typebox": "*"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.18"
   }
 }
